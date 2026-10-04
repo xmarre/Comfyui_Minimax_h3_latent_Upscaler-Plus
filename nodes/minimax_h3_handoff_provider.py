@@ -7,6 +7,8 @@ from typing import ClassVar
 
 import torch
 
+from .h3_patch_lattice import H3_PATCH_LATTICE, HALF_PIXEL_LATTICE
+
 H3_LATENT_UPSCALER_API_VERSION = 1
 H3_LATENT_UPSCALER_KIND = "minimax_h3_learned_latent_upscaler"
 PREFERRED_H3_LATENT_UPSCALER_MODEL = "minimax_h3_latent_upscaler_3d_bf16.safetensors"
@@ -29,6 +31,7 @@ class H3LatentUpscalerProvider:
 
     api_version: ClassVar[int] = H3_LATENT_UPSCALER_API_VERSION
     kind: ClassVar[str] = H3_LATENT_UPSCALER_KIND
+    h3_patch_lattice_api: ClassVar[int] = 1
 
     def __post_init__(self) -> None:
         if (
@@ -55,6 +58,7 @@ class H3LatentUpscalerProvider:
         *,
         target_h: int,
         target_w: int,
+        spatial_lattice: str = HALF_PIXEL_LATTICE,
     ) -> torch.Tensor:
         """Upscale one clean Bx24xTxHxW latent to exact target latent H/W."""
         if self.device == "cuda" and not torch.cuda.is_available():
@@ -62,6 +66,11 @@ class H3LatentUpscalerProvider:
                 "MiniMax H3 learned-upscaler provider is configured for CUDA, "
                 "but CUDA is unavailable; select CPU explicitly instead"
             )
+        kwargs = (
+            {}
+            if spatial_lattice == HALF_PIXEL_LATTICE
+            else {"spatial_lattice": spatial_lattice}
+        )
         return _lbh_module().upscale_clean_video_exact(
             video,
             model_name=self.model_name,
@@ -70,6 +79,16 @@ class H3LatentUpscalerProvider:
             device=self.device,
             precision=self.precision,
             offload_after_upscale=self.offload_after_upscale,
+            **kwargs,
+        )
+
+    def upscale_clean_video_h3_patch_lattice(self, video, *, target_h, target_w):
+        """Transport a physical H3 source carrier before decoder convolutions."""
+        return self.upscale_clean_video(
+            video,
+            target_h=target_h,
+            target_w=target_w,
+            spatial_lattice=H3_PATCH_LATTICE,
         )
 
 
