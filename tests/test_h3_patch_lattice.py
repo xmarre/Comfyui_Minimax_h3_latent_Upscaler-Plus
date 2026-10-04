@@ -173,3 +173,45 @@ def test_provider_passes_lattice_capability_explicitly_once(monkeypatch):
     assert provider.h3_patch_lattice_api == 2
     assert len(calls) == 1
     assert calls[0]["spatial_lattice"] == lattice.H3_PATCH_LATTICE
+
+
+def test_cached_network_uses_current_geometry_and_repeats_without_state_drift(
+    monkeypatch,
+):
+    torch.manual_seed(816)
+    model = (
+        upscaler.LatentResizer3D(
+            in_blocks=1,
+            out_blocks=1,
+            channels=32,
+            dropout=0,
+            temporal_every=1,
+            temporal_kernel=3,
+        )
+        .eval()
+        .requires_grad_(False)
+    )
+    loads = []
+    monkeypatch.setattr(
+        upscaler, "load_model", lambda *args: loads.append(args) or model
+    )
+    source = torch.randn(1, 24, 3, 8, 12)
+    before = source.clone()
+    provider = provider_module.H3LatentUpscalerProvider(
+        "cached", device="cpu", precision="fp32"
+    )
+    monkeypatch.setattr(provider_module, "_lbh_module", lambda: upscaler)
+    first = provider.upscale_clean_video_h3_patch_lattice(
+        source, target_h=12, target_w=18
+    )
+    landscape = provider.upscale_clean_video_h3_patch_lattice(
+        source.transpose(-1, -2), target_h=18, target_w=12
+    )
+    repeated = provider.upscale_clean_video_h3_patch_lattice(
+        source, target_h=12, target_w=18
+    )
+    assert first.shape == repeated.shape == (1, 24, 3, 12, 18)
+    assert landscape.shape == (1, 24, 3, 18, 12)
+    torch.testing.assert_close(first, repeated, rtol=0, atol=0)
+    assert torch.equal(source, before)
+    assert len(loads) == 3 and all(args == loads[0] for args in loads)

@@ -1,36 +1,40 @@
-# Physical H3 transfer candidate
+# Dense H3 transfer candidate
 
-Flow's partitioned continuation creates its source prefix on MiniMax H3's
-area-normalized, endpoint-excluded 2x2 patch lattice. The learned 3D upscaler
-previously always interpolated encoded features with trilinear half-pixel
-coordinates. These maps are different, including phase and axis scale when
-rounded source and target aspect ratios differ. Restoring the authoritative
-target prefix therefore joins differently sampled coordinate domains.
+H3 assigns one area-normalized spatial coordinate to each 2x2 transformer patch.
+The learned upscaler's Conv3d encoder produces a dense feature field. Treating
+its even/odd cells as four independently resampled lanes creates separated
+copies of narrow features. At 36->50, one source row at index 18 becomes two
+equal peaks at target rows 24 and 26 with a zero between them. Dense coordinate
+ramps at 36x54->50x76 alternate between 1.0 and 0.4305 source-cell increments.
+A continuous coordinate transform must have uniform increments.
 
-The provider now advertises `h3_patch_lattice_api=1` and exposes
-`upscale_clean_video_h3_patch_lattice`. This selects physical patch transport
-between encoder and decoder convolutions. All temporal blocks still process
-the complete sequence once. The four within-patch features retain their
-ownership. Border extension matches Flow's prefix construction. Interpolation
-scratch is split into bounded batches; this does not chunk the learned network.
-Ordinary node/provider calls keep their original half-pixel behavior.
+The selected path now uses `h3_dense_patch_center_lattice_v2`. For a dense axis
+of length n and spatial area A, its cell coordinates are
+`16*(1-n/sqrt(A)) + (i-0.5)*32/sqrt(A)`. The mean of each adjacent cell pair is
+the native H3 patch coordinate. Bilinear sampling acts on the complete dense
+field between encoder and decoder. Flow uses the identical transform for its
+source prefix carrier. No fitted transform or final output warp is applied.
 
-Coordinate-field round trips at 46x40 -> 66x58 and 54x36 -> 76x50 fail with the
-old mixed conventions and pass with physical transport in both directions.
-Tests also compare the decoder's actual input with each selected transport,
-exercise fp32/fp16/bf16 and batch/temporal/patch ownership, and verify one
-provider invocation. The checkpoint architecture and parameter keys do not
-change.
+The provider requires `h3_patch_lattice_api=2`; general clean-video API version 1
+and the callable `upscale_clean_video_h3_patch_lattice` remain. Flow rejects
+the earlier phase-separated capability before sampling, so both companion
+overlays must be updated. Ordinary upscaler node/provider calls retain their
+trained half-pixel interpolation. Parameter keys, normalization and temporal
+network execution are unchanged. Interpolation scratch is bounded to roughly
+64 MiB per chunk; the network processes the complete temporal sequence once.
 
-This repairs a demonstrated coordinate contract; it does not qualify a trained
-checkpoint's rendered continuity or texture/tone response. Decoder weights were
-trained with the ordinary interpolation path. A matched real workflow must
-verify the new path, including time and peak VRAM. No GPU cost is measured here.
-The zero-user-LoRA run 01132 is the primary replay; a subsequent matched
-user-LoRA on/off pair remains necessary.
+Regression evidence covers contiguous unimodal edge support in both axes and
+both spatial phases, uniform dense coordinates, native patch centers, both
+orientations, dtype/batch/time ownership, decoder-input routing, and repeated
+geometry changes through the same cached network. The v1 implementation fails
+all 14 edge/spacing cases even though all four coordinate round-trip cases pass.
+Round-trip equality alone cannot qualify either individual operator.
 
-The actual selected path emits `[H3 learned transfer]` with
-`spatial_lattice=h3_physical_patch_lattice_v1`, source/target H/W, temporal
-length, and `resample_position=encoder_to_decoder`. Flow separately counts the
-provider call and measures same-frame learned-prefix/authoritative-prefix affine
-correspondence before the overwrite. Neither receipt certifies visual success.
+Runs 01138 and 01139 both execute v1 with zero user-LoRA hooks. They differ in
+seed, prompt, first reference and orientation; they do not isolate a repeat-run
+state defect. The new tests reproduce an operator defect without trained
+weights. The attached metrics contain no rendered frames or tensor bytes, so
+the cause of every visible artifact in those runs remains unproven. Trained
+checkpoint continuity, texture, tone, time and peak VRAM require runtime
+validation. Replay the failing landscape workflow with both updated overlays
+and verify the v2 encoder-to-decoder log, then repeat its unchanged settings.

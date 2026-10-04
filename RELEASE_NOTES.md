@@ -1,3 +1,12 @@
+# Unreleased: continuous H3 transfer
+
+The selected physical handoff path resamples dense encoder cells continuously,
+preserving H3 patch-center coordinates without separating even/odd spatial
+phases. This removes a reproduced edge-duplication mechanism. The capability is
+`h3_patch_lattice_api=2` and requires the matching Flow companion overlay.
+Ordinary upscaling retains its existing interpolation. Trained-checkpoint
+continuity remains under runtime qualification.
+
 # MiniMax H3 Latent Upscaler v0.2.1
 
 v0.2.1 aligns the sampler-internal learned-upscaler provider defaults with the coordinated Flow-Aligned Regenerate progressive workflow.

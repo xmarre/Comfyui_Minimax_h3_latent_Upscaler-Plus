@@ -60,4 +60,5 @@ def resize_h3_patch_lattice(value, target_h, target_w):
             align_corners=True,
         )
         output[first:last] = mapped.to(value.dtype)
+        del mapped
     return output.reshape(b, t, c, target_h, target_w).permute(0, 2, 1, 3, 4)
