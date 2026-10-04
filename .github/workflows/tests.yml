@@ -66,12 +66,14 @@ jobs:
             nodes/minimax_h3_refine_support.py \
             nodes/minimax_h3_refine_sequence.py \
             nodes/minimax_h3_handoff_provider.py \
+            nodes/h3_patch_lattice.py \
             tests/conftest.py \
             tests/test_h3_refine_node.py \
             tests/test_h3_refine_sequence.py \
             tests/test_h3_refine_support.py \
             tests/test_native_comfyui_fixture.py \
             tests/test_handoff_provider.py \
+            tests/test_h3_patch_lattice.py \
             tests/test_upstream_sync.py \
             --ignore I001,N999,C408,UP035,S110,BLE001
           python -m compileall -q nodes tests
