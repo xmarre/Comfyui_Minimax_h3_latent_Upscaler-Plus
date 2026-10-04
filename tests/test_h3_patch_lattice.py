@@ -20,22 +20,23 @@ provider_module = importlib.import_module(f"{PACKAGE}.minimax_h3_handoff_provide
 
 
 def _coordinates(h, w):
-    gh, gw = h // 2, w // 2
-    area = math.sqrt(gh * gw)
+    area = math.sqrt(h * w)
     yy, xx = torch.meshgrid(
-        torch.arange(gh) * 32 / area + (1 - gh / area) * 16,
-        torch.arange(gw) * 32 / area + (1 - gw / area) * 16,
+        (torch.arange(h) - 0.5) * 32 / area + (1 - h / area) * 16,
+        (torch.arange(w) - 0.5) * 32 / area + (1 - w / area) * 16,
         indexing="ij",
     )
-    return (
-        torch.stack((yy, xx))[None, :, None]
-        .repeat_interleave(2, -2)
-        .repeat_interleave(2, -1)
-    )
+    return torch.stack((yy, xx))[None, :, None]
 
 
 @pytest.mark.parametrize(
-    "source,target", [((46, 40), (66, 58)), ((54, 36), (76, 50)), ((32, 32), (48, 48))]
+    "source,target",
+    [
+        ((46, 40), (66, 58)),
+        ((54, 36), (76, 50)),
+        ((36, 54), (50, 76)),
+        ((32, 32), (48, 48)),
+    ],
 )
 def test_physical_roundtrip_preserves_coordinate_fields_and_half_pixel_does_not(
     source, target
@@ -50,24 +51,57 @@ def test_physical_roundtrip_preserves_coordinate_fields_and_half_pixel_does_not(
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
-def test_patch_features_batch_and_temporal_identity_survive_transport(dtype):
-    value = torch.zeros(2, 3, 4, 8, 10, dtype=dtype)
-    for y in range(2):
-        for x in range(2):
-            value[..., y::2, x::2] = (
-                torch.arange(4)[None, None, :, None, None] + y * 10 + x * 20
-            )
+def test_dense_features_batch_and_temporal_identity_survive_transport(dtype):
+    value = torch.arange(24, dtype=dtype).reshape(2, 3, 4, 1, 1).expand(2, 3, 4, 8, 10)
     before = value.clone()
     result = lattice.resize_h3_patch_lattice(value, 12, 16)
     assert result.dtype == dtype
-    for y in range(2):
-        for x in range(2):
-            expected = value[..., y : y + 1, x : x + 1].expand(2, 3, 4, 6, 8)
-            torch.testing.assert_close(
-                result[..., y::2, x::2], expected, rtol=0, atol=1e-5
-            )
+    expected = value[..., :1, :1].expand(2, 3, 4, 12, 16)
+    torch.testing.assert_close(result, expected, rtol=0, atol=1e-5)
     assert torch.equal(value, before)
     assert lattice.resize_h3_patch_lattice(value, 8, 10) is value
+
+
+@pytest.mark.parametrize("source,target", [(36, 50), (54, 76), (40, 58)])
+@pytest.mark.parametrize("axis", [0, 1])
+@pytest.mark.parametrize("phase", [0, 1])
+def test_single_edge_has_one_contiguous_unimodal_support(source, target, axis, phase):
+    value = torch.zeros(1, 1, 1, source, source)
+    position = source // 2 // 2 * 2 + phase
+    if axis == 0:
+        value[..., position, :] = 1
+    else:
+        value[..., :, position] = 1
+    result = lattice.resize_h3_patch_lattice(value, target, target)[0, 0, 0]
+    profile = result[:, target // 2] if axis == 0 else result[target // 2]
+    support = (profile > 1e-5).nonzero().flatten()
+    assert support.numel() >= 1
+    assert int(support[-1] - support[0] + 1) == support.numel()
+    peak = int(profile.argmax())
+    assert bool((profile[: peak + 1].diff() >= -1e-5).all())
+    assert bool((profile[peak:].diff() <= 1e-5).all())
+
+
+@pytest.mark.parametrize("source,target", [((36, 54), (50, 76)), ((54, 36), (76, 50))])
+def test_dense_coordinate_spacing_is_uniform_and_patch_centers_match(source, target):
+    mapped = lattice.resize_h3_patch_lattice(_coordinates(*source), *target)
+    expected = _coordinates(*target)
+    interior = (..., slice(4, -4), slice(4, -4))
+    torch.testing.assert_close(mapped[interior], expected[interior], rtol=0, atol=1e-5)
+    patch_centers = F.avg_pool2d(mapped[0, :, 0], 2)
+    gh, gw = target[0] // 2, target[1] // 2
+    area = math.sqrt(gh * gw)
+    yy, xx = torch.meshgrid(
+        torch.arange(gh) * 32 / area + (1 - gh / area) * 16,
+        torch.arange(gw) * 32 / area + (1 - gw / area) * 16,
+        indexing="ij",
+    )
+    torch.testing.assert_close(
+        patch_centers[:, 2:-2, 2:-2],
+        torch.stack((yy, xx))[:, 2:-2, 2:-2],
+        rtol=0,
+        atol=2e-5,
+    )
 
 
 def test_network_transports_encoded_features_before_decoder_and_keeps_default(
@@ -136,6 +170,6 @@ def test_provider_passes_lattice_capability_explicitly_once(monkeypatch):
     provider.upscale_clean_video_h3_patch_lattice(
         torch.zeros(1, 24, 2, 4, 4), target_h=6, target_w=6
     )
-    assert provider.h3_patch_lattice_api == 1
+    assert provider.h3_patch_lattice_api == 2
     assert len(calls) == 1
     assert calls[0]["spatial_lattice"] == lattice.H3_PATCH_LATTICE

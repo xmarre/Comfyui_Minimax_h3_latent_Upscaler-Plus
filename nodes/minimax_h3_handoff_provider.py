@@ -31,7 +31,7 @@ class H3LatentUpscalerProvider:
 
     api_version: ClassVar[int] = H3_LATENT_UPSCALER_API_VERSION
     kind: ClassVar[str] = H3_LATENT_UPSCALER_KIND
-    h3_patch_lattice_api: ClassVar[int] = 1
+    h3_patch_lattice_api: ClassVar[int] = 2
 
     def __post_init__(self) -> None:
         if (
@@ -83,7 +83,7 @@ class H3LatentUpscalerProvider:
         )
 
     def upscale_clean_video_h3_patch_lattice(self, video, *, target_h, target_w):
-        """Transport a physical H3 source carrier before decoder convolutions."""
+        """Transport dense source features with aligned H3 patch centers."""
         return self.upscale_clean_video(
             video,
             target_h=target_h,
