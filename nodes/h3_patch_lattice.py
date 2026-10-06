@@ -41,7 +41,9 @@ def _axis(grid_h, grid_w, axis, lattice=H3_PATCH_LATTICE):
 def resize_h3_patch_lattice(value, target_h, target_w, lattice=H3_PATCH_LATTICE):
     """Resample dense cells without separating even/odd spatial phases.
 
-    The mean coordinate of each adjacent pair is the native H3 patch coordinate.
+    Under the patch-center lattice, each adjacent-pair mean is the native H3
+    patch coordinate. Under the RoPE-box lattice, that mean is one dense step
+    later: the midpoint of the corresponding patch interval.
     Encoder Conv3d features are a dense field, not four independent patch lanes.
     Chunk only the interpolation scratch, after all temporal encoder blocks and
     before all temporal decoder blocks. The learned network still runs once on

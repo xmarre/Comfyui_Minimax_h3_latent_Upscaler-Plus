@@ -335,3 +335,23 @@ def test_network_transports_encoded_features_on_the_rope_box_lattice():
     finally:
         handle_in.remove()
         handle_out.remove()
+
+
+@pytest.mark.parametrize("target_size", [None, (3, 8, 10), (3, 12, 16)])
+def test_network_rejects_unknown_lattice_before_encoder_or_identity_return(
+    monkeypatch, target_size
+):
+    model = upscaler.LatentResizer3D(
+        in_blocks=1, out_blocks=1, channels=32, dropout=0,
+        temporal_every=1, temporal_kernel=3,
+    ).eval()
+
+    def unexpected_encoder(*args, **kwargs):
+        pytest.fail("invalid lattice reached the encoder")
+
+    monkeypatch.setattr(model.conv_in, "forward", unexpected_encoder)
+    value = torch.randn(1, 24, 3, 8, 10)
+    before = value.clone()
+    with pytest.raises(ValueError, match="Unsupported spatial lattice"):
+        model(value, target_size=target_size, spatial_lattice="unknown_lattice")
+    assert torch.equal(value, before)

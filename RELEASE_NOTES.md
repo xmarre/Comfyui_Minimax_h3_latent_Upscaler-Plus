@@ -6,7 +6,12 @@
 - The new lattice reads H3 patch coordinates as interval starts inside the
   centered RoPE frame box. It matches the trained half-pixel map whenever source
   and target aspect ratios agree, and differs from
-  `h3_dense_patch_center_lattice_v2` by one constant sub-cell translation.
+  `h3_dense_patch_center_lattice_v2` by a constant offset in source sampling
+  coordinates. Border handling and the learned decoder determine the resulting
+  content displacement.
+- The backbone rejects unknown lattice names before encoder execution or an
+  identity return, matching the public provider validation. Generated Python
+  bytecode is excluded from version control.
 - `h3_patch_lattice_api` stays `2` and the default lattice is unchanged, so
   existing callers keep their behavior. Which lattice matches the model's
   cross-resolution placement is an empirical question for the consumer.

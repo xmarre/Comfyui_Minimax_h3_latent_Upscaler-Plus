@@ -258,6 +258,8 @@ class LatentResizer3D(nn.Module):
         self.conv_out = nn.Conv3d(channels, in_channels, 3, padding=1)
 
     def forward(self, x, scale=None, target_size=None, spatial_lattice=HALF_PIXEL_LATTICE):
+        if spatial_lattice != HALF_PIXEL_LATTICE and spatial_lattice not in H3_TRANSPORT_LATTICES:
+            raise ValueError(f"Unsupported spatial lattice: {spatial_lattice!r}")
         if target_size is not None:
             size = target_size
         elif scale is not None:
