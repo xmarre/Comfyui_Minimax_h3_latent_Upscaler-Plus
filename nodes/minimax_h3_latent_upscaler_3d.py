@@ -20,7 +20,7 @@ from einops import rearrange
 from enum import Enum
 from typing import TypedDict
 
-from .h3_patch_lattice import H3_PATCH_LATTICE, HALF_PIXEL_LATTICE, resize_h3_patch_lattice
+from .h3_patch_lattice import H3_TRANSPORT_LATTICES, HALF_PIXEL_LATTICE, resize_h3_patch_lattice
 
 # Try to import the new API
 try:
@@ -281,7 +281,7 @@ class LatentResizer3D(nn.Module):
             else:
                 x = b(x)
 
-        if spatial_lattice == H3_PATCH_LATTICE:
+        if spatial_lattice in H3_TRANSPORT_LATTICES:
             if size[0] != x.shape[2]:
                 raise ValueError("H3 patch-lattice transport preserves the temporal axis")
             logging.getLogger(__name__).info(
@@ -289,7 +289,7 @@ class LatentResizer3D(nn.Module):
                 "resample_position=encoder_to_decoder",
                 spatial_lattice, tuple(x.shape[-2:]), tuple(size[1:]), size[0],
             )
-            x = resize_h3_patch_lattice(x, size[1], size[2])
+            x = resize_h3_patch_lattice(x, size[1], size[2], lattice=spatial_lattice)
         else:
             x = F.interpolate(x, size=size, mode="trilinear", align_corners=False)
 
@@ -470,9 +470,9 @@ def upscale_clean_video_exact(
     target_h = int(target_h)
     target_w = int(target_w)
     source_h, source_w = map(int, video.shape[-2:])
-    if spatial_lattice not in (HALF_PIXEL_LATTICE, H3_PATCH_LATTICE):
+    if spatial_lattice != HALF_PIXEL_LATTICE and spatial_lattice not in H3_TRANSPORT_LATTICES:
         raise ValueError(f"Unsupported spatial lattice: {spatial_lattice!r}")
-    if spatial_lattice == H3_PATCH_LATTICE and any(v % 2 for v in (source_h, source_w, target_h, target_w)):
+    if spatial_lattice in H3_TRANSPORT_LATTICES and any(v % 2 for v in (source_h, source_w, target_h, target_w)):
         raise ValueError("H3 patch-lattice transport requires even spatial axes")
     if target_h < source_h or target_w < source_w:
         raise ValueError("MiniMax H3 learned upscale target must not shrink either spatial axis")
@@ -505,7 +505,7 @@ def upscale_clean_video_exact(
     with torch.inference_mode():
         work.sub_(norm_mean).div_(norm_std)
         model_kwargs = {"scale": effective_scale, "target_size": (temporal, target_h, target_w)}
-        if spatial_lattice == H3_PATCH_LATTICE:
+        if spatial_lattice in H3_TRANSPORT_LATTICES:
             model_kwargs["spatial_lattice"] = spatial_lattice
         output = model(work, **model_kwargs)
         del work

@@ -215,3 +215,123 @@ def test_cached_network_uses_current_geometry_and_repeats_without_state_drift(
     torch.testing.assert_close(first, repeated, rtol=0, atol=0)
     assert torch.equal(source, before)
     assert len(loads) == 3 and all(args == loads[0] for args in loads)
+
+
+@pytest.mark.parametrize(
+    "source,target", [((32, 48), (48, 72)), ((48, 32), (72, 48)), ((16, 16), (30, 30))]
+)
+def test_rope_box_lattice_is_the_trained_half_pixel_map_for_equal_aspect(
+    source, target
+):
+    torch.manual_seed(931)
+    value = torch.randn(1, 3, 2, *source)
+    box = lattice.resize_h3_patch_lattice(
+        value, *target, lattice=lattice.H3_ROPE_BOX_LATTICE
+    )
+    half_pixel = F.interpolate(
+        value, size=(2, *target), mode="trilinear", align_corners=False
+    )
+    # Only float32 coordinate rounding separates the two constructions.
+    torch.testing.assert_close(box, half_pixel, rtol=0, atol=1e-4)
+
+
+@pytest.mark.parametrize(
+    "source,target", [((32, 44), (54, 72)), ((44, 32), (72, 54)), ((36, 54), (50, 76))]
+)
+def test_rope_box_and_patch_center_lattices_differ_by_one_constant_translation(
+    source, target
+):
+    rows = torch.arange(source[0], dtype=torch.float32)[:, None].expand(*source)
+    cols = torch.arange(source[1], dtype=torch.float32)[None, :].expand(*source)
+    index = torch.stack((rows, cols))[None, :, None]
+    center = lattice.resize_h3_patch_lattice(index, *target)
+    box = lattice.resize_h3_patch_lattice(
+        index, *target, lattice=lattice.H3_ROPE_BOX_LATTICE
+    )
+    # Away from the border clamp, both maps are affine in the source index.
+    interior = (..., slice(3, -3), slice(3, -3))
+    delta = (box - center)[interior]
+    area_s = math.sqrt(source[0] * source[1])
+    area_t = math.sqrt(target[0] * target[1])
+    expected = 1.0 - area_s / area_t  # (1 - target_step / source_step) source cells
+    torch.testing.assert_close(
+        delta, torch.full_like(delta, -expected), rtol=0, atol=1e-4
+    )
+
+
+def test_unknown_transport_lattice_is_rejected():
+    with pytest.raises(ValueError, match="Unsupported H3 transport lattice"):
+        lattice.resize_h3_patch_lattice(
+            torch.zeros(1, 1, 1, 4, 4), 6, 6, lattice=lattice.HALF_PIXEL_LATTICE
+        )
+
+
+def test_provider_selects_the_requested_transport_lattice(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        provider_module,
+        "_lbh_module",
+        lambda: types.SimpleNamespace(
+            upscale_clean_video_exact=lambda value, **kwargs: (
+                calls.append(kwargs) or value
+            )
+        ),
+    )
+    provider = provider_module.H3LatentUpscalerProvider("m", device="cpu")
+    assert provider.h3_transport_lattices == (
+        lattice.H3_PATCH_LATTICE,
+        lattice.H3_ROPE_BOX_LATTICE,
+    )
+    provider.upscale_clean_video_h3_patch_lattice(
+        torch.zeros(1, 24, 2, 4, 4),
+        target_h=6,
+        target_w=6,
+        spatial_lattice=lattice.H3_ROPE_BOX_LATTICE,
+    )
+    assert calls[0]["spatial_lattice"] == lattice.H3_ROPE_BOX_LATTICE
+    with pytest.raises(ValueError, match="Unsupported H3 transport lattice"):
+        provider.upscale_clean_video_h3_patch_lattice(
+            torch.zeros(1, 24, 2, 4, 4),
+            target_h=6,
+            target_w=6,
+            spatial_lattice=lattice.HALF_PIXEL_LATTICE,
+        )
+    assert len(calls) == 1
+
+
+def test_network_transports_encoded_features_on_the_rope_box_lattice():
+    torch.manual_seed(814)
+    model = upscaler.LatentResizer3D(
+        in_blocks=1,
+        out_blocks=1,
+        channels=32,
+        dropout=0,
+        temporal_every=1,
+        temporal_kernel=3,
+    ).eval()
+    encoded, decoder_inputs = [], []
+    handle_in = model.in_blocks[-1].register_forward_hook(
+        lambda _m, _i, output: encoded.append(output.clone())
+    )
+    handle_out = model.out_blocks[0].register_forward_pre_hook(
+        lambda _m, inputs: decoder_inputs.append(inputs[0].clone())
+    )
+    try:
+        with torch.no_grad():
+            model(
+                torch.randn(1, 24, 3, 8, 10),
+                scale=1.5,
+                target_size=(3, 12, 16),
+                spatial_lattice=lattice.H3_ROPE_BOX_LATTICE,
+            )
+        torch.testing.assert_close(
+            decoder_inputs[0],
+            lattice.resize_h3_patch_lattice(
+                encoded[0], 12, 16, lattice=lattice.H3_ROPE_BOX_LATTICE
+            ),
+            rtol=0,
+            atol=0,
+        )
+    finally:
+        handle_in.remove()
+        handle_out.remove()

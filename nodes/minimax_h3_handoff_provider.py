@@ -7,7 +7,7 @@ from typing import ClassVar
 
 import torch
 
-from .h3_patch_lattice import H3_PATCH_LATTICE, HALF_PIXEL_LATTICE
+from .h3_patch_lattice import H3_PATCH_LATTICE, H3_TRANSPORT_LATTICES, HALF_PIXEL_LATTICE
 
 H3_LATENT_UPSCALER_API_VERSION = 1
 H3_LATENT_UPSCALER_KIND = "minimax_h3_learned_latent_upscaler"
@@ -32,6 +32,7 @@ class H3LatentUpscalerProvider:
     api_version: ClassVar[int] = H3_LATENT_UPSCALER_API_VERSION
     kind: ClassVar[str] = H3_LATENT_UPSCALER_KIND
     h3_patch_lattice_api: ClassVar[int] = 2
+    h3_transport_lattices: ClassVar[tuple[str, ...]] = H3_TRANSPORT_LATTICES
 
     def __post_init__(self) -> None:
         if (
@@ -82,13 +83,17 @@ class H3LatentUpscalerProvider:
             **kwargs,
         )
 
-    def upscale_clean_video_h3_patch_lattice(self, video, *, target_h, target_w):
-        """Transport dense source features with aligned H3 patch centers."""
+    def upscale_clean_video_h3_patch_lattice(
+        self, video, *, target_h, target_w, spatial_lattice=H3_PATCH_LATTICE
+    ):
+        """Transport dense source features on one of the H3 RoPE lattices."""
+        if spatial_lattice not in H3_TRANSPORT_LATTICES:
+            raise ValueError(f"Unsupported H3 transport lattice: {spatial_lattice!r}")
         return self.upscale_clean_video(
             video,
             target_h=target_h,
             target_w=target_w,
-            spatial_lattice=H3_PATCH_LATTICE,
+            spatial_lattice=spatial_lattice,
         )
 
 

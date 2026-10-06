@@ -1,4 +1,21 @@
-"""Continuous dense-feature transport with H3 physical patch centers."""
+"""Continuous dense-feature transport between H3 spatial RoPE lattices.
+
+H3 assigns patch k of an axis the RoPE coordinate
+``16 * (1 - n / sqrt(A)) + 2 * k * 32 / sqrt(A)``: the frame occupies the
+centered box ``16 * (1 -/+ n / sqrt(A))`` and patch coordinates are the
+``endpoint=False`` interval starts inside it. Two dense-cell placements are
+supported:
+
+- ``h3_dense_patch_center_lattice_v2`` treats each patch coordinate as the
+  patch center (dense cells at -/+ one quarter patch around it).
+- ``h3_rope_box_half_pixel_lattice_v1`` treats each patch coordinate as the
+  patch start, placing dense cell i at the half-pixel center
+  ``box_start + (i + 0.5) * 32 / sqrt(A)``. When source and target aspect
+  ratios match, this is exactly the half-pixel map the network was trained on.
+
+Between grids with different dense steps the two placements differ by a
+constant translation of ``(1 - target_step / source_step)`` source cells.
+"""
 
 from __future__ import annotations
 
@@ -8,17 +25,20 @@ import torch
 import torch.nn.functional as F
 
 H3_PATCH_LATTICE = "h3_dense_patch_center_lattice_v2"
+H3_ROPE_BOX_LATTICE = "h3_rope_box_half_pixel_lattice_v1"
 HALF_PIXEL_LATTICE = "half_pixel_latent_v1"
+H3_TRANSPORT_LATTICES = (H3_PATCH_LATTICE, H3_ROPE_BOX_LATTICE)
 
 
-def _axis(grid_h, grid_w, axis):
+def _axis(grid_h, grid_w, axis, lattice=H3_PATCH_LATTICE):
     area = math.sqrt(grid_h * grid_w)
     length = (grid_h, grid_w)[axis]
     step = 32 / area
-    return length, (1 - length / area) * 16 - step / 2, step
+    offset = step / 2 if lattice == H3_ROPE_BOX_LATTICE else -step / 2
+    return length, (1 - length / area) * 16 + offset, step
 
 
-def resize_h3_patch_lattice(value, target_h, target_w):
+def resize_h3_patch_lattice(value, target_h, target_w, lattice=H3_PATCH_LATTICE):
     """Resample dense cells without separating even/odd spatial phases.
 
     The mean coordinate of each adjacent pair is the native H3 patch coordinate.
@@ -27,6 +47,8 @@ def resize_h3_patch_lattice(value, target_h, target_w):
     before all temporal decoder blocks. The learned network still runs once on
     the complete temporal sequence.
     """
+    if lattice not in H3_TRANSPORT_LATTICES:
+        raise ValueError(f"Unsupported H3 transport lattice: {lattice!r}")
     if value.ndim != 5 or not value.is_floating_point():
         raise ValueError("H3 lattice resize expects floating BxCxTxHxW features")
     b, c, t, h, w = value.shape
@@ -38,8 +60,8 @@ def resize_h3_patch_lattice(value, target_h, target_w):
         return value
     axes = []
     for axis in (0, 1):
-        sn, s0, ds = _axis(h, w, axis)
-        tn, t0, dt = _axis(target_h, target_w, axis)
+        sn, s0, ds = _axis(h, w, axis, lattice)
+        tn, t0, dt = _axis(target_h, target_w, axis, lattice)
         index = (
             t0 + torch.arange(tn, device=value.device, dtype=torch.float32) * dt - s0
         ) / ds

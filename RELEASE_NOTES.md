@@ -1,3 +1,16 @@
+# Unreleased: RoPE-box transport lattice
+
+- Add `h3_rope_box_half_pixel_lattice_v1` as a second H3 transport lattice,
+  selected through `upscale_clean_video_h3_patch_lattice(...,
+  spatial_lattice=...)` and advertised by `h3_transport_lattices`.
+- The new lattice reads H3 patch coordinates as interval starts inside the
+  centered RoPE frame box. It matches the trained half-pixel map whenever source
+  and target aspect ratios agree, and differs from
+  `h3_dense_patch_center_lattice_v2` by one constant sub-cell translation.
+- `h3_patch_lattice_api` stays `2` and the default lattice is unchanged, so
+  existing callers keep their behavior. Which lattice matches the model's
+  cross-resolution placement is an empirical question for the consumer.
+
 # MiniMax H3 Latent Upscaler-Plus v0.2.2
 
 Provide continuous H3 encoder-to-decoder feature transport for the coordinated

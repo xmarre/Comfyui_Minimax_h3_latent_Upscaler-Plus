@@ -255,10 +255,13 @@ The `H3_LATENT_UPSCALER` value is an immutable `H3LatentUpscalerProvider` (`node
 | `kind` | `"minimax_h3_learned_latent_upscaler"` |
 | `api_version` | `1` |
 | `h3_patch_lattice_api` | `2` |
+| `h3_transport_lattices` | `("h3_dense_patch_center_lattice_v2", "h3_rope_box_half_pixel_lattice_v1")` |
 | `model_name`, `device`, `precision`, `offload_after_upscale` | node inputs |
 
 - `upscale_clean_video(video, *, target_h, target_w)` takes a clean floating-point `B×24×T×H×W` video latent and returns it at exactly `target_h × target_w` with batch, channels, time and dtype preserved. Shrinking either axis is rejected, and non-finite results raise an error.
-- `upscale_clean_video_h3_patch_lattice(video, *, target_h, target_w)` runs the same network but resamples the dense encoder features on coordinates whose adjacent-cell means are H3's native patch centers (`h3_dense_patch_center_lattice_v2`), before the decoder. It requires even spatial axes. It exists for consumers that must match H3's patch-coordinate map at a handoff. The ordinary node and provider paths keep the trained half-pixel interpolation. Background: [`docs/TRANSFER_LATTICE_20261004.md`](docs/TRANSFER_LATTICE_20261004.md).
+- `upscale_clean_video_h3_patch_lattice(video, *, target_h, target_w, spatial_lattice="h3_dense_patch_center_lattice_v2")` runs the same network but resamples the dense encoder features on an H3 spatial-RoPE lattice before the decoder. It requires even spatial axes and exists for consumers that must match H3's patch-coordinate map at a handoff. The ordinary node and provider paths keep the trained half-pixel interpolation. Background: [`docs/TRANSFER_LATTICE_20261004.md`](docs/TRANSFER_LATTICE_20261004.md).
+  - `h3_dense_patch_center_lattice_v2` (default) reads each H3 patch coordinate as the patch center: adjacent dense cells average to it.
+  - `h3_rope_box_half_pixel_lattice_v1` reads each patch coordinate as the patch start inside H3's centered, `endpoint=False` RoPE frame box and places dense cells at half-pixel centers in that box. For equal source/target aspect ratios it equals the trained half-pixel map. It differs from v2 by one constant translation of `1 - target_step / source_step` source cells (about 0.4 source cells for 32×44→54×72).
 
 ## Model and training data
 
