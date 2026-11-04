@@ -319,12 +319,11 @@ def get_models_dir():
     return folder_paths.get_folder_paths(_LATENT_UPSCALE_FOLDER)[0]
 
 def scan_models():
-    files = []
-    model_dir = get_models_dir()
-    for ext in ("*.pth", "*.safetensors"):
-        files.extend(glob.glob(os.path.join(model_dir, ext)))
-    names = sorted(os.path.basename(f) for f in files)
-    return names if names else [f"(place models in: {model_dir})"]
+    names = [
+        name for name in folder_paths.get_filename_list(_LATENT_UPSCALE_FOLDER)
+        if os.path.splitext(name)[1].lower() in (".pth", ".safetensors")
+    ]
+    return names if names else [f"(place models in: {get_models_dir()})"]
 
 def _convert_state_tensor(tensor, dtype):
     if torch.is_tensor(tensor) and tensor.is_floating_point() and tensor.dtype != dtype:
@@ -401,7 +400,7 @@ def load_model(name, device, precision):
         # execution. Moving an already-correct model is a no-op in PyTorch.
         return MODEL_CACHE[cache_key].to(device)
 
-    path = os.path.join(get_models_dir(), name)
+    path = folder_paths.get_full_path_or_raise(_LATENT_UPSCALE_FOLDER, name)
     if not os.path.exists(path):
         raise FileNotFoundError(f"Model file not found: {path}")
 
