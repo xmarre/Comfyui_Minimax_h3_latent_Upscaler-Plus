@@ -55,7 +55,7 @@ Restart ComfyUI afterwards. The only dependency outside a standard ComfyUI insta
 
 ### Checkpoints
 
-Place checkpoints in `ComfyUI/models/latent_upscale_models/`. The folder is registered automatically and scanned non-recursively for `.safetensors` and `.pth` files.
+Place checkpoints in `ComfyUI/models/latent_upscale_models/` or configure additional directories under the `latent_upscale_models` key in ComfyUI's `extra_model_paths.yaml`. Both upscalers and the integrated refinement/handoff nodes use ComfyUI's recursive model discovery for `.safetensors` and `.pth` files. Nested checkpoint names retain their relative paths. If the same relative name exists in multiple directories, ComfyUI's registered path order determines which file is loaded; the standard directory is added as a fallback if not already registered. Restart ComfyUI after changing model paths or replacing a cached checkpoint.
 
 Pre-trained checkpoints: [huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler](https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler)
 

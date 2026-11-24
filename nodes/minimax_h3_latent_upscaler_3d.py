@@ -13,7 +13,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import os
-import glob
 import folder_paths
 import re
 from einops import rearrange
@@ -62,11 +61,14 @@ except ImportError:
 # Register model folder
 # ==========================================
 _LATENT_UPSCALE_FOLDER = "latent_upscale_models"
-if _LATENT_UPSCALE_FOLDER not in folder_paths.folder_names_and_paths:
-    folder_paths.add_model_folder_path(
-        _LATENT_UPSCALE_FOLDER,
-        os.path.join(folder_paths.models_dir, _LATENT_UPSCALE_FOLDER)
-    )
+# Extra paths can be registered before custom nodes are imported. Keep their
+# order, but also register the standard directory as a fallback.
+_default_model_dir = os.path.join(folder_paths.models_dir, _LATENT_UPSCALE_FOLDER)
+if (
+    _LATENT_UPSCALE_FOLDER not in folder_paths.folder_names_and_paths
+    or _default_model_dir not in folder_paths.get_folder_paths(_LATENT_UPSCALE_FOLDER)
+):
+    folder_paths.add_model_folder_path(_LATENT_UPSCALE_FOLDER, _default_model_dir)
 
 # Spatial compression factor of the Minimax H3 3D VAE (16x).
 # Hidden from the UI on purpose: 1280x704 px -> 80x44 latent.
@@ -331,7 +333,7 @@ def _convert_state_tensor(tensor, dtype):
     return tensor
 
 def _load_raw_sd(path, device, dtype):
-    if path.endswith('.safetensors'):
+    if path.lower().endswith('.safetensors'):
         from safetensors import safe_open
         with safe_open(path, framework='pt', device=str(device)) as f:
             keys = list(f.keys())

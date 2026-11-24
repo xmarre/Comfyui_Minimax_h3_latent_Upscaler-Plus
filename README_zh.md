@@ -55,7 +55,7 @@ git clone https://github.com/xmarre/Comfyui_Minimax_h3_latent_Upscaler-Plus.git 
 
 ### 权重
 
-把权重放到 `ComfyUI/models/latent_upscale_models/`。该目录会自动注册，并以非递归方式扫描其中的 `.safetensors` 和 `.pth` 文件。
+把权重放到 `ComfyUI/models/latent_upscale_models/`，或在 ComfyUI 的 `extra_model_paths.yaml` 中通过 `latent_upscale_models` 键配置其他目录。2D、3D 放大节点及集成细化/交接节点均使用 ComfyUI 的递归模型发现机制查找 `.safetensors` 和 `.pth` 文件。子目录中的权重保留相对路径。如果多个目录存在相同的相对文件名，则按 ComfyUI 注册的路径顺序加载；标准目录尚未注册时会作为后备目录添加。更改模型路径或替换已缓存的权重后，请重启 ComfyUI。
 
 预训练权重：[huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler](https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler)
 
