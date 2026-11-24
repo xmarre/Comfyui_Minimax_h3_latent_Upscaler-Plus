@@ -51,7 +51,7 @@ jobs:
         with:
           python-version: ${{ matrix.python_version }}
           cache: pip
-          cache-dependency-path: Comfyui_Minimax_h3_latent_Upscaler/requirements.txt
+          cache-dependency-path: Comfyui_Minimax_h3_latent_Upscaler/pyproject.toml
 
       - name: Install test dependencies
         run: |

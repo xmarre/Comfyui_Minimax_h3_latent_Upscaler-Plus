@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import os
-import glob
 import folder_paths
 import re
 from einops import rearrange
@@ -18,11 +17,14 @@ from einops import rearrange
 # 注册模型文件夹
 # ==========================================
 _LATENT_UPSCALE_FOLDER = "latent_upscale_models"
-if _LATENT_UPSCALE_FOLDER not in folder_paths.folder_names_and_paths:
-    folder_paths.add_model_folder_path(
-        _LATENT_UPSCALE_FOLDER,
-        os.path.join(folder_paths.models_dir, _LATENT_UPSCALE_FOLDER)
-    )
+# Extra paths can be registered before custom nodes are imported. Keep their
+# order, but also register the standard directory as a fallback.
+_default_model_dir = os.path.join(folder_paths.models_dir, _LATENT_UPSCALE_FOLDER)
+if (
+    _LATENT_UPSCALE_FOLDER not in folder_paths.folder_names_and_paths
+    or _default_model_dir not in folder_paths.get_folder_paths(_LATENT_UPSCALE_FOLDER)
+):
+    folder_paths.add_model_folder_path(_LATENT_UPSCALE_FOLDER, _default_model_dir)
 
 # ==========================================
 # Minimax H3 归一化参数 (24通道)
@@ -274,12 +276,11 @@ def get_models_dir():
     return folder_paths.get_folder_paths(_LATENT_UPSCALE_FOLDER)[0]
 
 def scan_models():
-    files = []
-    model_dir = get_models_dir()
-    for ext in ("*.pth", "*.safetensors"):
-        files.extend(glob.glob(os.path.join(model_dir, ext)))
-    names = sorted(os.path.basename(f) for f in files)
-    return names if names else [f"(请将模型放入: {model_dir})"]
+    names = [
+        name for name in folder_paths.get_filename_list(_LATENT_UPSCALE_FOLDER)
+        if os.path.splitext(name)[1].lower() in (".pth", ".safetensors")
+    ]
+    return names if names else [f"(请将模型放入: {get_models_dir()})"]
 
 def _convert_state_tensor(tensor, dtype):
     if torch.is_tensor(tensor) and tensor.is_floating_point() and tensor.dtype != dtype:
@@ -287,7 +288,7 @@ def _convert_state_tensor(tensor, dtype):
     return tensor
 
 def _load_raw_sd(path, device, dtype):
-    if path.endswith('.safetensors'):
+    if path.lower().endswith('.safetensors'):
         from safetensors import safe_open
         with safe_open(path, framework='pt', device=str(device)) as f:
             keys = list(f.keys())
@@ -377,7 +378,7 @@ def load_model(name, device, precision):
     if cache_key in MODEL_CACHE:
         return MODEL_CACHE[cache_key]
 
-    path = os.path.join(get_models_dir(), name)
+    path = folder_paths.get_full_path_or_raise(_LATENT_UPSCALE_FOLDER, name)
     if not os.path.exists(path):
         raise FileNotFoundError(f"模型文件不存在: {path}")
 
